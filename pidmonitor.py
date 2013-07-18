@@ -30,6 +30,9 @@ from ctrldaemon import ControlDaemon
 from thread import threading
 from ConfigParser import RawConfigParser
 from os import path
+from logging import (getLogger, FileHandler, Formatteri, WARNING)
+global options
+options = ['memory_max', 'virt_max']
 
 
 class PidMonitor(object):
@@ -53,7 +56,7 @@ class PidMonitor(object):
 
 class PidMonitorThread(threading):
 
-    __slots__ = ['ctrldaemon', 'services']
+    __slots__ = ['ctrl_daemon', 'services']
 
     def __init__(self, services):
         super(PidMonitorThread, self).__init__()
@@ -61,20 +64,25 @@ class PidMonitorThread(threading):
 
     def init_control_daemon(self):
         for service in self.services.keys():
-            self.ctrldaemon.append(ControlDaemon(service))
+            self.ctrl_daemon.append(ControlDaemon(service))
 
     def run(self):
         while True:
-            pass
+            for daemon in self.ctrl_daemon:
+                self.check_service(daemon)
+            #sleep(60)
 
-    def check_service(self):
-        pass
-
+    def check_service(self, daemon):
+        if daemon.get_status():
+            memory_usage = daemon.get_memory()
+            memory_max = self.services[str(daemon)][options[0]]
+            #memory_virt = self.services[str(daemon)][options[1]]
+            if memory_max > memory_usage:
+                daemon.restart()
 
 class PidMonitorConfig(object):
 
     __slots__ = ['config', 'path_config', 'options']
-    options = ['memory_max', 'virt_max']
 
     def __init__(self, path_config=None):
         if not path_config:
@@ -92,4 +100,27 @@ class PidMonitorConfig(object):
                 tmp_config[section][option] = int(self.config.get(section,
                                                                   option))
         return tmp_config
+
+
+class PidMonitorLog(object):
+
+    __slots__ = ['logger', 'handler']
+
+    def __init__(self):
+        self.logger = getLogger('PidMonitor')
+        self.handler = FileHandler('/var/log/pidmonitor.log')
+        formatter = Formatter('%(asctime)s %(levelname)s %(message)s')
+        self.handler.setFormatter(formatter)
+        self.logger.addHandler(self.handler)
+        self.logger.setLevel(WARNING)
+        self.logger.info('Init Program')
+
+    def set_msg(self, type_msg, daemon_name, msg):
+        text = '{} - {}'.format(daemon_name - msg)
+        if type_msg == 'ERROR':
+            self.logger.error(text)
+        elif type_msg == 'INFO':
+            self.logger.info(text)
+        else:
+            pass
 
