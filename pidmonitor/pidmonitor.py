@@ -27,10 +27,11 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 from ctrldaemon import ControlDaemon
-from thread import threading
+from threading import Thread
 from ConfigParser import RawConfigParser
 from os import path
-from logging import (getLogger, FileHandler, Formatteri, WARNING)
+from logging import (getLogger, FileHandler, Formatter, WARNING)
+from time import sleep
 global options
 options = ['memory_max', 'virt_max']
 
@@ -40,7 +41,8 @@ class PidMonitor(object):
     __slots__ = ['config_dict', 'thread_pid']
 
     def __init__(self):
-        pass
+        self.get_config()
+        self.thread_pid = None
 
     def get_config(self):
         config = PidMonitorConfig()
@@ -54,13 +56,16 @@ class PidMonitor(object):
             self.thread_pid.run()
 
 
-class PidMonitorThread(threading):
+class PidMonitorThread(Thread):
 
-    __slots__ = ['ctrl_daemon', 'services']
+    __slots__ = ['ctrl_daemon', 'services', 'logger']
+    ctrl_daemon = list()
 
     def __init__(self, services):
         super(PidMonitorThread, self).__init__()
         self.services = services
+        self.logger = PidMonitorLog()
+        self.init_control_daemon()
 
     def init_control_daemon(self):
         for service in self.services.keys():
@@ -70,15 +75,22 @@ class PidMonitorThread(threading):
         while True:
             for daemon in self.ctrl_daemon:
                 self.check_service(daemon)
-            #sleep(60)
+            sleep(60)
 
     def check_service(self, daemon):
         if daemon.get_status():
-            memory_usage = daemon.get_memory()
+            memory_usage = daemon.get_memory_usage()
+            print memory_usage
             memory_max = self.services[str(daemon)][options[0]]
+            print memory_max
             #memory_virt = self.services[str(daemon)][options[1]]
-            if memory_max > memory_usage:
+            if memory_usage > memory_max:
                 daemon.restart()
+                if daemon.get_status():
+                    self.logger.set_msg('INFO', daemon, 'Restarted')
+                else:
+                    self.logger.set_msg('ERROR', daemon, 'Don\'t restarted')
+
 
 class PidMonitorConfig(object):
 
@@ -96,9 +108,12 @@ class PidMonitorConfig(object):
         self.config.read(self.path_config)
         tmp_config = dict()
         for section in self.config.sections():
-            for option in self.options:
-                tmp_config[section][option] = int(self.config.get(section,
-                                                                  option))
+            tmp_options = dict()
+            for option in options:
+                print section, option
+                tmp_options[option] = self.config.getint(str(section),
+                                                         str(option))
+            tmp_config[section] = tmp_options
         return tmp_config
 
 
@@ -116,7 +131,7 @@ class PidMonitorLog(object):
         self.logger.info('Init Program')
 
     def set_msg(self, type_msg, daemon_name, msg):
-        text = '{} - {}'.format(daemon_name - msg)
+        text = '{} - {}'.format(daemon_name, msg)
         if type_msg == 'ERROR':
             self.logger.error(text)
         elif type_msg == 'INFO':

@@ -1,0 +1,3 @@
+[httpd]
+memory_max=100
+virt_max=30
